@@ -7,6 +7,8 @@
         <Nullable>enable</Nullable>
         <InvariantGlobalization>true</InvariantGlobalization>
         <Authors>Rosemoe</Authors>
+        <Version>1.1.0</Version>
+        <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     </PropertyGroup>
 
     <ItemGroup>

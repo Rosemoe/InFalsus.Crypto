@@ -1,6 +1,6 @@
 ﻿namespace InFalsus.Crypto;
 
-public class AssetsCryptoUtils
+public static class AssetsCryptoUtils
 {
 
     public static byte[] DecryptFile(byte[] data, string fileName,

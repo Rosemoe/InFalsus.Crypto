@@ -88,7 +88,7 @@ public static class Program
 
     private static void ValidateFileName(string name, bool isInput)
     {
-        if (!name.All(char.IsAsciiHexDigitLower) || name.Length != 21)
+        if (!name.All(char.IsAsciiHexDigitLower) || name.Length != 32)
         {
             Console.ForegroundColor = ConsoleColor.Yellow;
             string target = isInput ? "input" : "output";

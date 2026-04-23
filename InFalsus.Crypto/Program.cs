@@ -92,7 +92,7 @@ public static class Program
         {
             Console.ForegroundColor = ConsoleColor.Yellow;
             string target = isInput ? "input" : "output";
-            Console.WriteLine($"Asset file name should be a 32 chars lower hex string, while the currently processed {target} file does not:");
+            Console.WriteLine($"Asset file name should be a 32-char lower hex string, while the currently processed {target} file is not:");
             Console.WriteLine(name);
             Console.ResetColor();
         }

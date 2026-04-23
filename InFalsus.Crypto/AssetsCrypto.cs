@@ -7,10 +7,11 @@ namespace InFalsus.Crypto;
 
 public static class AssetsCrypto
 {
-    private static readonly byte[] DataKey = CalculateKey(612346124, 8671344);
-
-    private static readonly byte[]
-        MagicKey = CalculateKey(1611115665, 23545672);
+    public class AesXtsKeys(byte[] dataKey, byte[] tweakKey)
+    {
+        public byte[] DataKey = dataKey;
+        public byte[] TweakKey = tweakKey;
+    }
 
     private static void XorVector128(Span<byte> data, Span<byte> xorValues)
     {
@@ -109,20 +110,20 @@ public static class AssetsCrypto
         }
     }
 
-    private static void Crypt(byte[] data, uint magic, int dataBlockSize,
+    private static void Crypt(byte[] data, AesXtsKeys keys, uint blockIndex, int dataBlockSize,
         bool isDecrypt)
     {
         using var aes = Aes.Create();
         aes.Mode = CipherMode.ECB;
         aes.Padding = PaddingMode.None;
-        aes.Key = DataKey;
+        aes.Key = keys.DataKey;
         var cipherData =
             isDecrypt ? aes.CreateDecryptor() : aes.CreateEncryptor();
 
         using var aes2 = Aes.Create();
         aes2.Mode = CipherMode.ECB;
         aes2.Padding = PaddingMode.None;
-        aes2.Key = MagicKey;
+        aes2.Key = keys.TweakKey;
         var cipherMagic = aes2.CreateEncryptor();
 
         int num = (data.Length - 1) / dataBlockSize + 1;
@@ -138,32 +139,33 @@ public static class AssetsCrypto
             }
 
             Array.Fill(magicBytes, (byte)0);
-            BinaryPrimitives.WriteUInt64LittleEndian(magicBytes, magic);
+            BinaryPrimitives.WriteUInt64LittleEndian(magicBytes, blockIndex);
             cipherMagic.TransformBlock(magicBytes, 0,
                 16, magicBytes, 0);
             CryptBlock(cipherData, cipherData.InputBlockSize, data,
                 i * dataBlockSize, cnt,
                 magicBytes);
-            magic++;
+            blockIndex++;
         }
     }
 
-    public static void DecryptBlocks(byte[] data) => Crypt(data, 0, 512, true);
+    public static void DecryptBlocks(byte[] data, AesXtsKeys keys) => Crypt(data, keys, 0, 512, true);
 
-    public static void EncryptBlocks(byte[] data) =>
-        Crypt(data, 0, 512, false);
+    public static void EncryptBlocks(byte[] data, AesXtsKeys keys) =>
+        Crypt(data, keys, 0, 512, false);
 
     /// <summary>
     /// Recommended method for decrypting resources
     /// </summary>
     /// <param name="data">Encrypted file bytes</param>
+    /// <param name="keys">AES-XTS keys</param>
     /// <param name="declaredLength">File length declared in StreamingAssetsMapping</param>
     /// <returns>Decrypted bytes</returns>
-    public static byte[] DecryptLowiro(byte[] data, int declaredLength)
+    public static byte[] DecryptLowiro(byte[] data, AesXtsKeys keys, int declaredLength)
     {
         byte[] res = new byte[data.Length];
         data.CopyTo(res, 0);
-        DecryptBlocks(res);
+        DecryptBlocks(res, keys);
 
         int length = Math.Min(res.Length, declaredLength);
         if (length == res.Length)
@@ -180,12 +182,13 @@ public static class AssetsCrypto
     /// Decrypt lowiro-style padded data, and try to unpad the decrypted data
     /// </summary>
     /// <param name="data">Encrypted file bytes</param>
+    /// <param name="keys">AES-XTS keys</param>
     /// <returns>Decrypted bytes</returns>
-    public static byte[] DecryptLowiro(byte[] data)
+    public static byte[] DecryptLowiro(byte[] data, AesXtsKeys keys)
     {
         byte[] res = new byte[data.Length];
         data.CopyTo(res, 0);
-        DecryptBlocks(res);
+        DecryptBlocks(res, keys);
 
         int length = data.Length;
         if (length > 0)
@@ -221,8 +224,9 @@ public static class AssetsCrypto
     /// Encrypt the data with lowiro-style padding
     /// </summary>
     /// <param name="data">File content to be encrypted</param>
+    /// <param name="keys">AES-XTS keys</param>
     /// <returns>Encrypted and padded data</returns>
-    public static byte[] EncryptLowiro(byte[] data)
+    public static byte[] EncryptLowiro(byte[] data, AesXtsKeys keys)
     {
         int padLen = 16 - data.Length % 16;
         byte[] res = new byte[data.Length + padLen];
@@ -233,27 +237,8 @@ public static class AssetsCrypto
             res[data.Length + i] = (byte)i;
         }
 
-        EncryptBlocks(res);
+        EncryptBlocks(res, keys);
         return res;
     }
 
-    private static byte[] CalculateKey(int seed1, int seed2)
-    {
-        byte[] res = new byte[16];
-        BitConverter.TryWriteBytes(res, SecretNumbers.GetSecretUlong(seed1));
-        BitConverter.TryWriteBytes(res.AsSpan(8),
-            SecretNumbers.GetSecretUlong(seed2));
-        return res;
-    }
-
-    internal static void EncryptionTest()
-    {
-        byte[] data = new byte[512];
-        Random.Shared.NextBytes(data);
-        byte[] recovered = DecryptLowiro(EncryptLowiro(data), data.Length);
-        if (!data.SequenceEqual(recovered))
-        {
-            throw new Exception("En/Decryption failed");
-        }
-    }
 }

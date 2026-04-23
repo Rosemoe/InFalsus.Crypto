@@ -1,4 +1,5 @@
 ﻿using System.CommandLine;
+using System.Text.RegularExpressions;
 
 namespace InFalsus.Crypto;
 
@@ -6,65 +7,78 @@ public static class Program
 {
     public static void Main(String[] args)
     {
-        var command = new RootCommand("Crypto Tools for In Falsus")
+        var inputArgument = new Argument<string>("input")
         {
-            new Argument<string>("input")
+            Description = "Input file path"
+        };
+
+        var outputArgument = new Argument<string>("output")
+        {
+            Description = "Output file path",
+        };
+        
+        var modeOption = new Option<string>("--mode")
+        {
+            Description =
+                "Crypto Mode (encrypt/decrypt).",
+            DefaultValueFactory = _ => "decrypt",
+            Required = false,
+            Validators =
             {
-                Description = "Input file path"
-            },
-            new Argument<string>("output")
-            {
-                Description = "Output file path",
-            },
-            new Option<string>("--mode")
-            {
-                Description =
-                    "Crypto Mode (encrypt/decrypt).",
-                DefaultValueFactory = _ => "decrypt",
-                Validators =
+                result =>
                 {
-                    result =>
+                    var value = result.GetValueOrDefault<string>()
+                        .ToLower();
+                    if (value != "decrypt" && value != "encrypt")
                     {
-                        var value = result.GetValueOrDefault<string>()
-                            .ToLower();
-                        if (value != "decrypt" && value != "encrypt")
-                        {
-                            result.AddError(
-                                "Mode must be one of 'decrypt', 'encrypt'");
-                        }
+                        result.AddError(
+                            "Mode must be one of 'decrypt', 'encrypt'");
                     }
                 }
-            },
-            new Option<int>("--length")
-            {
-                Description =
-                    "Length recorded in StreamingAssetsMapping for decryption.",
-                DefaultValueFactory = _ => 0
-            },
+            }
+        };
+        var lengthOption = new Option<int>("--length")
+        {
+            Description =
+                "Length recorded in StreamingAssetsMapping for decryption.",
+            DefaultValueFactory = _ => 0,
+            Required = false
+        };
+        var command = new RootCommand("Crypto Tools for In Falsus")
+        {
+            inputArgument,
+            outputArgument,
+            modeOption,
+            lengthOption,
         };
 
         command.SetAction(result =>
         {
-            var mode = result.GetRequiredValue<string>("mode").ToLower();
+            var mode = result.GetValue(modeOption)?.ToLower();
             var isDecrypt = mode == "decrypt";
-            var length = result.GetValue<int>("length");
-            var inputBytes =
-                File.ReadAllBytes(result.GetRequiredValue<string>("input"));
+            var length = result.GetValue(lengthOption);
+            var inputPath = result.GetRequiredValue(inputArgument);
+            var outputPath = result.GetRequiredValue(outputArgument);
+            
+            var inputBytes = File.ReadAllBytes(inputPath);
             byte[] outputBytes;
             if (isDecrypt)
             {
+                var fileInfo = new FileInfo(inputPath);
+                ValidateFileName(fileInfo.Name, true);
                 outputBytes = length <= 0
-                    ? AssetsCrypto.DecryptLowiro(inputBytes)
-                    : AssetsCrypto.DecryptLowiro(inputBytes, length);
+                    ? AssetsCryptoUtils.DecryptFile(inputBytes, fileInfo.Name)
+                    : AssetsCryptoUtils.DecryptFile(inputBytes, fileInfo.Name, length);
             }
             else
             {
-                outputBytes = AssetsCrypto.EncryptLowiro(inputBytes);
+                var fileInfo = new FileInfo(outputPath);
+                ValidateFileName(fileInfo.Name, false);
+                outputBytes = AssetsCryptoUtils.DecryptFile(inputBytes, fileInfo.Name);
             }
 
-            var outputPath = result.GetRequiredValue<string>("output");
             var parentPath = Path.GetDirectoryName(outputPath);
-            if (parentPath != null)
+            if (parentPath is { Length: > 0 })
                 Directory.CreateDirectory(parentPath);
             File.WriteAllBytes(outputPath, outputBytes);
         });
@@ -72,21 +86,15 @@ public static class Program
         command.Parse(args).Invoke();
     }
 
-    private static void BenchmarkDecrypt(byte[] data)
+    private static void ValidateFileName(string name, bool isInput)
     {
-        var st = DateTime.Now;
-        var times = 500;
-        for (int i = 0; i < times; i++)
+        if (!name.All(char.IsAsciiHexDigitLower) || name.Length != 21)
         {
-            AssetsCrypto.DecryptLowiro(data);
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            string target = isInput ? "input" : "output";
+            Console.WriteLine($"Asset file name should be a 32 chars lower hex string, while the currently processed {target} file does not:");
+            Console.WriteLine(name);
+            Console.ResetColor();
         }
-
-        var timeUsedMs = (DateTime.Now - st).TotalMilliseconds;
-        Console.WriteLine("=== Decryption Test Result ===");
-        Console.WriteLine("File Size: " + data.Length + " byte(s)");
-        Console.WriteLine("Average Time: " + timeUsedMs / times + " ms");
-        var throughput =
-            data.LongLength * times / (timeUsedMs / 1000) / 1024 / 1024;
-        Console.WriteLine("Average Throughput: " + throughput + " MB/s");
     }
 }
